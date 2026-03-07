@@ -17,6 +17,7 @@ import smtplib
 from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -28,7 +29,7 @@ SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 
 
-def send_newsletter(html_content: str, send_date: date | None = None) -> None:
+def send_newsletter(html_content: str, send_date: Optional[date] = None) -> None:
     """
     Sends the rendered newsletter HTML via Gmail SMTP.
 
