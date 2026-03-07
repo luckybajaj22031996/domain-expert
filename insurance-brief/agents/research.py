@@ -90,6 +90,83 @@ def _parse_rss_date(date_str: str) -> Optional[datetime]:
 # RSS parser (used by ET and BS)
 # ---------------------------------------------------------------------------
 
+def _is_article_url(url: str) -> bool:
+    """
+    Return True only if the URL points to a specific article, not a homepage,
+    section page, or feed URL.
+
+    Rejects:
+      - Empty / non-http strings
+      - Bare domain roots  (e.g. https://example.com or https://example.com/)
+      - Single-segment paths  (e.g. /insurance — likely a section)
+      - RSS / feed paths
+    """
+    if not url or not url.startswith("http"):
+        return False
+    from urllib.parse import urlparse
+    path = urlparse(url).path.rstrip("/")
+    if not path:
+        return False
+    segments = [s for s in path.split("/") if s]
+    if len(segments) < 2:
+        return False
+    if any(kw in path.lower() for kw in ("rss", "feed", "feeds", "rssfeeds")):
+        return False
+    return True
+
+
+def _extract_article_url(item: ET.Element) -> str:
+    """
+    Extract the direct article URL from an RSS <item> or Atom <entry>.
+
+    Priority:
+      1. <guid isPermaLink="true">   — explicit permalink
+      2. <link> text                 — standard RSS article link
+      3. Atom <link href="...">      — Atom feed href attribute
+      4. <guid> text (any)           — often the permalink even without the flag
+      5. First <a href> inside <description> HTML — last resort
+
+    Each candidate is validated with _is_article_url() before being accepted.
+    """
+    # 1. <guid isPermaLink="true">
+    guid_el = item.find("guid")
+    if guid_el is not None and guid_el.get("isPermaLink", "").lower() == "true":
+        candidate = (guid_el.text or "").strip()
+        if _is_article_url(candidate):
+            return candidate
+
+    # 2. RSS <link> text
+    link_el = item.find("link")
+    if link_el is not None and link_el.text:
+        candidate = link_el.text.strip()
+        if _is_article_url(candidate):
+            return candidate
+
+    # 3. Atom <link href="...">
+    atom_link = item.find("{http://www.w3.org/2005/Atom}link")
+    if atom_link is not None:
+        candidate = atom_link.get("href", "").strip()
+        if _is_article_url(candidate):
+            return candidate
+
+    # 4. <guid> without isPermaLink (ET and BS both use this as the permalink)
+    if guid_el is not None:
+        candidate = (guid_el.text or "").strip()
+        if _is_article_url(candidate):
+            return candidate
+
+    # 5. First href in description HTML
+    desc_el = item.find("description")
+    if desc_el is not None:
+        soup = BeautifulSoup(desc_el.text or "", "html.parser")
+        for a in soup.find_all("a", href=True):
+            candidate = a["href"].strip()
+            if _is_article_url(candidate):
+                return candidate
+
+    return ""
+
+
 def _fetch_rss(client: httpx.Client, url: str, source_name: str) -> list[Story]:
     """Generic RSS/Atom feed parser. Returns Story objects."""
     try:
@@ -117,9 +194,6 @@ def _fetch_rss(client: httpx.Client, url: str, source_name: str) -> list[Story]:
         title_el = item.find("title") or item.find(
             "{http://www.w3.org/2005/Atom}title"
         )
-        link_el = item.find("link") or item.find(
-            "{http://www.w3.org/2005/Atom}link"
-        )
         desc_el = item.find("description") or item.find(
             "{http://www.w3.org/2005/Atom}summary"
         )
@@ -128,15 +202,12 @@ def _fetch_rss(client: httpx.Client, url: str, source_name: str) -> list[Story]:
         )
 
         title = (title_el.text or "").strip() if title_el is not None else ""
-        # RSS <link> can be text or an href attribute (Atom)
-        if link_el is not None:
-            url_val = (link_el.text or link_el.get("href", "")).strip()
-        else:
-            url_val = ""
+        url_val = _extract_article_url(item)
         summary_raw = (desc_el.text or "").strip() if desc_el is not None else ""
         pub_date = _parse_rss_date(date_el.text) if date_el is not None else None
 
         if not title or not url_val:
+            logger.debug("Skipping item — missing title or no article URL: %r", url_val)
             continue
 
         if not _is_recent(pub_date, cutoff):
