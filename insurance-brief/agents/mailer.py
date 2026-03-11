@@ -9,6 +9,9 @@ Inputs:
 Reads from .env:
   GMAIL_ADDRESS      — sender and recipient (same address)
   GMAIL_APP_PASSWORD — Gmail app password (not your main Gmail password)
+  NEWSLETTER_TO      — optional: comma-separated recipient list (defaults to GMAIL_ADDRESS)
+  NEWSLETTER_CC      — optional: comma-separated CC list
+  NEWSLETTER_BCC     — optional: comma-separated BCC list
 """
 
 import logging
@@ -27,6 +30,16 @@ logger = logging.getLogger(__name__)
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
+
+
+def _parse_address_list(value: Optional[str]) -> list[str]:
+    """
+    Parses a comma-separated env var into a clean list of email addresses.
+    Empty/whitespace-only entries are ignored.
+    """
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def send_newsletter(html_content: str, send_date: Optional[date] = None) -> None:
@@ -49,13 +62,25 @@ def send_newsletter(html_content: str, send_date: Optional[date] = None) -> None
     if not app_password:
         raise EnvironmentError("GMAIL_APP_PASSWORD is not set in environment / .env file.")
 
+    to_addrs = _parse_address_list(os.getenv("NEWSLETTER_TO")) or [gmail_address]
+    cc_addrs = _parse_address_list(os.getenv("NEWSLETTER_CC"))
+    bcc_addrs = _parse_address_list(os.getenv("NEWSLETTER_BCC"))
+    recipients = [*to_addrs, *cc_addrs, *bcc_addrs]
+
+    if not recipients:
+        raise EnvironmentError(
+            "No recipients resolved. Set NEWSLETTER_TO or ensure GMAIL_ADDRESS is set."
+        )
+
     today = send_date or date.today()
     subject = f"Domain Expert | {today.strftime('%d %B %Y')}"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = gmail_address
-    msg["To"] = gmail_address
+    msg["To"] = ", ".join(to_addrs)
+    if cc_addrs:
+        msg["Cc"] = ", ".join(cc_addrs)
     msg.attach(MIMEText(html_content, "html"))
 
     logger.info("Connecting to %s:%s as %s", SMTP_HOST, SMTP_PORT, gmail_address)
@@ -65,9 +90,9 @@ def send_newsletter(html_content: str, send_date: Optional[date] = None) -> None
         server.starttls()
         server.ehlo()
         server.login(gmail_address, app_password)
-        server.sendmail(gmail_address, gmail_address, msg.as_string())
+        server.sendmail(gmail_address, recipients, msg.as_string())
 
-    logger.info("Newsletter sent to %s — subject: %s", gmail_address, subject)
+    logger.info("Newsletter sent to %s — subject: %s", ", ".join(recipients), subject)
 
 
 if __name__ == "__main__":
