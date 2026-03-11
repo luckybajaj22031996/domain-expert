@@ -89,6 +89,9 @@ Fill in your `.env`:
 | `GMAIL_ADDRESS` | Your Gmail address |
 | `GMAIL_APP_PASSWORD` | [Google App Passwords](https://myaccount.google.com/apppasswords) |
 | `NEWSAPI_KEY` | [newsapi.org](https://newsapi.org) — free tier |
+| `NEWSLETTER_TO` *(optional)* | Comma-separated recipients (defaults to `GMAIL_ADDRESS`) |
+| `NEWSLETTER_CC` *(optional)* | Comma-separated CC recipients |
+| `NEWSLETTER_BCC` *(optional)* | Comma-separated BCC recipients |
 
 ---
 
