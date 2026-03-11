@@ -14,6 +14,9 @@ jobs:
       GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+      NEWSLETTER_TO: ${{ secrets.NEWSLETTER_TO || vars.NEWSLETTER_TO }}
+      NEWSLETTER_CC: ${{ secrets.NEWSLETTER_CC || vars.NEWSLETTER_CC }}
+      NEWSLETTER_BCC: ${{ secrets.NEWSLETTER_BCC || vars.NEWSLETTER_BCC }}
 
     steps:
       - name: Checkout repository
